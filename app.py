@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🌱 AI 습관 트래커 (Studio Ghibli 에디션)")
+st.title("🌱 AI 습관 트래커 (Studio Ghibli 포스터 에디션)")
 
 # =========================
 # 세션 상태 초기화
@@ -24,25 +24,35 @@ if "habits" not in st.session_state:
 if "records" not in st.session_state:
     st.session_state.records = {}
 
+if "today_film" not in st.session_state:
+    st.session_state.today_film = None
+
 # =========================
-# Ghibli API
+# Ghibli Film API
 # =========================
-def get_ghibli_character():
+def get_ghibli_film():
     try:
         r = requests.get(
-            "https://ghibliapi.vercel.app/people",
+            "https://ghibliapi.vercel.app/films",
             timeout=10
         )
-        data = r.json()
-        char = random.choice([c for c in data if c.get("image")])
-        return char
+        film = random.choice(r.json())
+        return {
+            "title": film["title"],
+            "image": film["image"],
+            "description": film["description"]
+        }
     except:
         return None
 
-ghibli_char = get_ghibli_character()
+# 오늘 포스터 고정 (새로고침해도 안 바뀜)
+if st.session_state.today_film is None:
+    st.session_state.today_film = get_ghibli_film()
+
+film = st.session_state.today_film
 
 # =========================
-# 오늘 정보
+# 오늘 날짜
 # =========================
 today = datetime.date.today()
 year, month = today.year, today.month
@@ -56,17 +66,14 @@ if today_key not in st.session_state.records:
     }
 
 # =========================
-# 상단 입력 UI
+# 상단 UI
 # =========================
 st.subheader("😊 오늘 기분")
 mood = st.slider("기분 점수", 1, 10, 5)
 
-# =========================
-# 습관 관리
-# =========================
 st.subheader("✏️ 습관 관리")
-
 new_habit = st.text_input("새 습관 추가")
+
 if st.button("➕ 추가") and new_habit:
     if new_habit not in st.session_state.habits:
         st.session_state.habits.append(new_habit)
@@ -78,9 +85,10 @@ if st.button("➕ 추가") and new_habit:
 # =========================
 st.markdown("## 🗓️ 이번 달 습관 달력")
 
+weekdays = ["월", "화", "수", "목", "금", "토", "일"]
 cols = st.columns(7)
-for i, day in enumerate(["월","화","수","목","금","토","일"]):
-    cols[i].markdown(f"**{day}**")
+for i, w in enumerate(weekdays):
+    cols[i].markdown(f"**{w}**")
 
 for week in month_days:
     cols = st.columns(7)
@@ -93,10 +101,10 @@ for week in month_days:
             day_key = str(day)
             st.markdown(f"### {day.day}")
 
-            # 오늘이면 캐릭터 표시
-            if day == today and ghibli_char:
-                st.image(ghibli_char["image"], width=80)
-                st.caption(ghibli_char["name"])
+            # 🌱 오늘 날짜 → 포스터 표시
+            if day == today and film:
+                st.image(film["image"], width=90)
+                st.caption(f"🎬 {film['title']}")
 
             # 기록 초기화
             if day_key not in st.session_state.records:
@@ -107,6 +115,7 @@ for week in month_days:
             # 습관 체크
             for h in st.session_state.habits:
                 checked = st.session_state.records[day_key].get(h, False)
+
                 cb_key = f"{day_key}_{h}"
 
                 new_val = st.checkbox(
@@ -117,7 +126,6 @@ for week in month_days:
 
                 st.session_state.records[day_key][h] = new_val
 
-                # 취소선
                 if new_val:
                     st.markdown(
                         f"<span style='color:gray;text-decoration:line-through'>{h}</span>",
@@ -144,7 +152,7 @@ c3.metric("기분", f"{mood}/10")
 # =========================
 with st.expander("ℹ️ 안내"):
     st.markdown("""
-- 🌱 Studio Ghibli API 사용
-- 💾 데이터는 세션 기반 (새로고침 시 초기화)
-- 🗓️ 오늘 날짜에만 캐릭터가 표시됩니다
+- 🌱 Studio Ghibli Films API 사용 (공식 포스터 이미지)
+- 🗓️ 포스터는 오늘 날짜에만 표시됩니다
+- 💾 세션 기반 데이터 (새로고침 시 초기화)
 """)
