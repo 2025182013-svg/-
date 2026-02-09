@@ -3,9 +3,7 @@ import streamlit as st
 import random
 import requests
 import datetime
-import pandas as pd
 import calendar
-from typing import Optional
 
 # =========================
 # 기본 설정
@@ -30,98 +28,56 @@ if "habits" not in st.session_state:
         "😴 수면"
     ]
 
-if "checked_habits" not in st.session_state:
-    st.session_state.checked_habits = set()
+if "checked" not in st.session_state:
+    st.session_state.checked = set()
 
 if "today_pokemon" not in st.session_state:
     st.session_state.today_pokemon = None
 
 # =========================
-# 사이드바 - API 키
+# 사이드바
 # =========================
 with st.sidebar:
-    st.header("🔑 API 설정")
-    openai_api_key = st.text_input("OpenAI API Key", type="password")
-    weather_api_key = st.text_input("OpenWeatherMap API Key", type="password")
+    st.header("✏️ 습관 관리")
 
-# =========================
-# API 함수
-# =========================
-def get_weather(city, api_key):
-    if not api_key:
-        return None
-    try:
-        r = requests.get(
-            "https://api.openweathermap.org/data/2.5/weather",
-            params={"q": city, "appid": api_key, "units": "metric", "lang": "kr"},
-            timeout=10
-        )
-        r.raise_for_status()
-        d = r.json()
-        return {
-            "city": city,
-            "temp": d["main"]["temp"],
-            "desc": d["weather"][0]["description"]
-        }
-    except:
-        return None
+    new_habit = st.text_input("새 습관 추가")
+    if st.button("➕ 추가") and new_habit:
+        st.session_state.habits.append(new_habit)
+        st.experimental_rerun()
 
-
-def get_pokemon():
-    try:
-        pid = random.randint(1, 151)
-        r = requests.get(f"https://pokeapi.co/api/v2/pokemon/{pid}", timeout=10)
-        r.raise_for_status()
-        d = r.json()
-        return {
-            "id": pid,
-            "name": d["name"].capitalize(),
-            "image": d["sprites"]["other"]["official-artwork"]["front_default"],
-            "types": [t["type"]["name"] for t in d["types"]],
-            "stats": {s["stat"]["name"]: s["base_stat"] for s in d["stats"]}
-        }
-    except:
-        return None
-
-# =========================
-# 습관 관리 UI
-# =========================
-st.subheader("✏️ 습관 관리")
-
-new_habit = st.text_input("새 습관 추가")
-if st.button("➕ 추가") and new_habit:
-    st.session_state.habits.append(new_habit)
-    st.experimental_rerun()
-
-for i, h in enumerate(st.session_state.habits):
-    cols = st.columns([6, 1])
-    with cols[0]:
-        checked = h in st.session_state.checked_habits
-        label = f"~~{h}~~" if checked else h
-        if st.checkbox(label, value=checked, key=f"habit_{i}"):
-            st.session_state.checked_habits.add(h)
-        else:
-            st.session_state.checked_habits.discard(h)
-    with cols[1]:
-        if st.button("❌", key=f"del_{i}"):
-            st.session_state.habits.pop(i)
-            st.session_state.checked_habits.discard(h)
-            st.experimental_rerun()
+    st.markdown("---")
+    st.caption("습관은 달력의 오늘 칸에서 체크됩니다")
 
 # =========================
 # 오늘 상태
 # =========================
 mood = st.slider("😊 오늘 기분", 1, 10, 5)
-city = st.selectbox("🌍 도시", ["Seoul", "Busan", "Incheon", "Daegu", "Jeju"])
 
-rate = int(len(st.session_state.checked_habits) / max(len(st.session_state.habits), 1) * 100)
-
-st.metric("오늘 달성률", f"{rate}%")
+rate = int(
+    len(st.session_state.checked)
+    / max(len(st.session_state.habits), 1)
+    * 100
+)
 
 # =========================
-# 달력 UI
+# 포켓몬 생성 버튼
 # =========================
-st.markdown("### 🗓️ 이번 달 습관 달력")
+if st.button("🎮 오늘의 포켓몬 생성"):
+    try:
+        pid = random.randint(1, 151)
+        r = requests.get(f"https://pokeapi.co/api/v2/pokemon/{pid}", timeout=10)
+        d = r.json()
+        st.session_state.today_pokemon = {
+            "name": d["name"].capitalize(),
+            "image": d["sprites"]["other"]["official-artwork"]["front_default"]
+        }
+    except:
+        st.session_state.today_pokemon = None
+
+# =========================
+# 📅 달력 UI (메인)
+# =========================
+st.markdown("## 🗓️ 이번 달 습관 달력")
 
 today = datetime.date.today()
 year, month = today.year, today.month
@@ -138,30 +94,45 @@ for week in cal.monthdatescalendar(year, month):
         with cols[i]:
             if day.month != month:
                 st.write("")
+                continue
+
+            # 📅 날짜
+            st.markdown(f"### {day.day}")
+
+            # 👉 오늘만 상세 표시
+            if day == today:
+                st.markdown(f"📊 **달성률 {rate}%**  |  😊 {mood}")
+
+                # 🧩 포켓몬
+                if st.session_state.today_pokemon:
+                    st.image(
+                        st.session_state.today_pokemon["image"],
+                        width=80
+                    )
+                    st.caption(
+                        f"파트너: {st.session_state.today_pokemon['name']}"
+                    )
+
+                # ✅ 습관 체크리스트 (달력 안!)
+                for h in st.session_state.habits:
+                    checked = h in st.session_state.checked
+                    label = f"~~{h}~~" if checked else h
+
+                    if st.checkbox(
+                        label,
+                        value=checked,
+                        key=f"{day}_{h}"
+                    ):
+                        st.session_state.checked.add(h)
+                    else:
+                        st.session_state.checked.discard(h)
+
             else:
-                st.markdown(f"**{day.day}**")
-                if day == today:
-                    st.markdown(f"📊 {rate}%  😊 {mood}")
-                    if st.session_state.today_pokemon:
-                        st.image(st.session_state.today_pokemon["image"], width=60)
+                # 다른 날짜는 요약만
+                st.caption("기록 없음")
 
 # =========================
-# 결과 생성
+# 안내
 # =========================
 st.markdown("---")
-if st.button("🎮 오늘의 포켓몬 & 리포트 생성"):
-    pokemon = get_pokemon()
-    st.session_state.today_pokemon = pokemon
-
-    weather = get_weather(city, weather_api_key)
-
-    st.subheader("🧩 오늘의 파트너 포켓몬")
-    if pokemon:
-        st.image(pokemon["image"], width=200)
-        st.write(f"No.{pokemon['id']} {pokemon['name']}")
-        st.write("타입:", ", ".join(pokemon["types"]))
-        st.bar_chart(pd.DataFrame.from_dict(pokemon["stats"], orient="index"))
-
-    st.subheader("🌦 날씨")
-    if weather:
-        st.write(f"{weather['city']} | {weather['desc']} | {weather['temp']}℃")
+st.caption("🎮 달력의 오늘 칸이 당신의 하루 대시보드입니다")
