@@ -3,20 +3,21 @@ import datetime
 import calendar
 import random
 import requests
+from openai import OpenAI
 
 # =========================
 # 기본 설정
 # =========================
 st.set_page_config(
-    page_title="AI 습관 트래커 (Ghibli Forest)",
-    page_icon="🌱",
+    page_title="AI 습관 트래커 (Ghibli Streak)",
+    page_icon="🔥",
     layout="wide"
 )
 
-st.title("🌱 AI 습관 트래커 (Ghibli Forest Edition)")
+st.title("🔥 AI 습관 트래커 (Studio Ghibli Streak Edition)")
 
 # =========================
-# 세션 상태 초기화
+# 세션 상태
 # =========================
 if "records" not in st.session_state:
     st.session_state.records = {}
@@ -24,8 +25,8 @@ if "records" not in st.session_state:
 if "streak" not in st.session_state:
     st.session_state.streak = 0
 
-if "forest_level" not in st.session_state:
-    st.session_state.forest_level = 0
+if "last_success_day" not in st.session_state:
+    st.session_state.last_success_day = None
 
 if "today_film" not in st.session_state:
     st.session_state.today_film = None
@@ -43,8 +44,14 @@ with st.sidebar:
     new_habit = st.text_input("습관 이름", placeholder="예: 스트레칭")
 
     st.markdown("---")
-    st.subheader("🔥 Streak & Forest")
-    st.write(f"연속 달성: 🔥 x {st.session_state.streak}")
+    st.subheader("🔑 OpenAI API")
+    openai_key = st.text_input("API Key", type="password")
+
+    generate_ai = st.button("🤖 AI 코치 리포트 생성")
+
+    st.markdown("---")
+    st.subheader("🔥 현재 Streak")
+    st.write("🔥" * st.session_state.streak or "아직 streak 없음")
 
 # =========================
 # Ghibli Film API
@@ -75,7 +82,7 @@ if today_key not in st.session_state.records:
 
 today_habits = st.session_state.records[today_key]["habits"]
 
-# 습관 추가
+# 습관 추가 (오늘만)
 if new_habit and new_habit not in today_habits:
     today_habits[new_habit] = False
 
@@ -100,9 +107,9 @@ for week in month_days:
             day_key = str(day)
             st.markdown(f"**{day.day}**")
 
-            # 오늘 포스터
+            # 오늘만 포스터
             if day == today and film:
-                st.image(film["image"], width=65)
+                st.image(film["image"], width=60)
 
             if day_key not in st.session_state.records:
                 st.session_state.records[day_key] = {"habits": {}}
@@ -134,43 +141,61 @@ total = len(today_habits)
 rate = int(done / total * 100) if total else 0
 
 # =========================
-# 🔥 Streak 로직
+# 🔥 Streak 로직 (하루 1회만 증가)
 # =========================
 if total > 0 and done == total:
-    st.session_state.streak += 1
+    if st.session_state.last_success_day != today:
+        st.session_state.streak += 1
+        st.session_state.last_success_day = today
 else:
-    st.session_state.streak = 0
+    if st.session_state.last_success_day not in (today, None):
+        st.session_state.streak = 0
+        st.session_state.last_success_day = None
 
 # =========================
-# 🌱 Forest 성장 로직
-# =========================
-if rate >= 80:
-    st.session_state.forest_level += 2
-elif rate >= 50:
-    st.session_state.forest_level += 1
-
-forest_stage = (
-    "🌱 새싹" if st.session_state.forest_level < 3 else
-    "🌿 관목" if st.session_state.forest_level < 6 else
-    "🌳 나무" if st.session_state.forest_level < 10 else
-    "🌲 숲"
-)
-
-# =========================
-# 요약 UI (듀오링고 느낌)
+# 요약
 # =========================
 st.markdown("---")
-st.subheader("🔥 오늘의 성장")
+st.subheader("🔥 오늘의 진행 상황")
 
 c1, c2, c3 = st.columns(3)
 c1.metric("달성률", f"{rate}%")
-c2.metric("Streak", f"🔥 x {st.session_state.streak}")
-c3.metric("Forest", forest_stage)
+c2.metric("완료 습관", f"{done}/{total}")
+c3.metric("Streak", f"🔥 {st.session_state.streak}")
 
-# 🔥 불꽃 애니메이션 (이모지 연출)
-st.markdown(
-    " ".join(["🔥"] * min(st.session_state.streak, 10))
-)
+# =========================
+# 🤖 AI 코치 리포트
+# =========================
+if generate_ai:
+    if not openai_key:
+        st.error("OpenAI API Key를 입력해주세요.")
+    else:
+        client = OpenAI(api_key=openai_key)
 
-# 🌱 숲 성장 연출
-st.markdown(f"### {forest_stage}")
+        prompt = f"""
+너는 듀오링고 스타일의 집요하지만 응원하는 AI 코치야.
+
+오늘 정보:
+- 기분: {mood}/10
+- 달성률: {rate}%
+- Streak: {st.session_state.streak}
+- 완료한 습관: {[h for h, v in today_habits.items() if v]}
+- 미완료 습관: {[h for h, v in today_habits.items() if not v]}
+- 오늘의 지브리 작품: {film['title']}
+
+조건:
+- 짧고 동기부여되게
+- 이모지 사용
+- 내일 바로 할 수 있는 행동 1개 제안
+"""
+
+        with st.spinner("AI 코치 분석 중..."):
+            res = client.chat.completions.create(
+                model="gpt-5-mini",
+                messages=[
+                    {"role": "system", "content": prompt}
+                ]
+            )
+
+        st.markdown("## 🤖 AI 코치 리포트")
+        st.markdown(res.choices[0].message.content)
