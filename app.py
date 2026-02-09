@@ -35,21 +35,7 @@ if "today_pokemon" not in st.session_state:
     st.session_state.today_pokemon = None
 
 # =========================
-# 사이드바
-# =========================
-with st.sidebar:
-    st.header("✏️ 습관 관리")
-
-    new_habit = st.text_input("새 습관 추가")
-    if st.button("➕ 추가") and new_habit:
-        st.session_state.habits.append(new_habit)
-        st.experimental_rerun()
-
-    st.markdown("---")
-    st.caption("습관은 달력의 오늘 칸에서 체크됩니다")
-
-# =========================
-# 오늘 상태
+# 오늘 기본 정보
 # =========================
 mood = st.slider("😊 오늘 기분", 1, 10, 5)
 
@@ -60,12 +46,13 @@ rate = int(
 )
 
 # =========================
-# 포켓몬 생성 버튼
+# 오늘의 포켓몬 생성
 # =========================
 if st.button("🎮 오늘의 포켓몬 생성"):
     try:
         pid = random.randint(1, 151)
         r = requests.get(f"https://pokeapi.co/api/v2/pokemon/{pid}", timeout=10)
+        r.raise_for_status()
         d = r.json()
         st.session_state.today_pokemon = {
             "name": d["name"].capitalize(),
@@ -96,12 +83,13 @@ for week in cal.monthdatescalendar(year, month):
                 st.write("")
                 continue
 
-            # 📅 날짜
             st.markdown(f"### {day.day}")
 
-            # 👉 오늘만 상세 표시
+            # =========================
+            # 👉 오늘 날짜 칸 (확장)
+            # =========================
             if day == today:
-                st.markdown(f"📊 **달성률 {rate}%**  |  😊 {mood}")
+                st.markdown(f"📊 **달성률 {rate}%** | 😊 {mood}")
 
                 # 🧩 포켓몬
                 if st.session_state.today_pokemon:
@@ -113,7 +101,9 @@ for week in cal.monthdatescalendar(year, month):
                         f"파트너: {st.session_state.today_pokemon['name']}"
                     )
 
-                # ✅ 습관 체크리스트 (달력 안!)
+                st.markdown("---")
+
+                # ✅ 습관 체크리스트
                 for h in st.session_state.habits:
                     checked = h in st.session_state.checked
                     label = f"~~{h}~~" if checked else h
@@ -127,12 +117,26 @@ for week in cal.monthdatescalendar(year, month):
                     else:
                         st.session_state.checked.discard(h)
 
+                # ➕ 새 습관 추가 (달력 안!)
+                st.markdown("➕ **새 습관 추가**")
+                new_habit = st.text_input(
+                    " ",
+                    placeholder="예: 🧘 스트레칭",
+                    key="new_habit_input"
+                )
+                if st.button("추가", key="add_habit_btn"):
+                    if new_habit.strip():
+                        st.session_state.habits.append(new_habit.strip())
+                        st.rerun()
+
+            # =========================
+            # 다른 날짜
+            # =========================
             else:
-                # 다른 날짜는 요약만
                 st.caption("기록 없음")
 
 # =========================
-# 안내
+# 하단 안내
 # =========================
 st.markdown("---")
-st.caption("🎮 달력의 오늘 칸이 당신의 하루 대시보드입니다")
+st.caption("🎮 오늘 날짜 칸이 당신의 하루 대시보드입니다")
