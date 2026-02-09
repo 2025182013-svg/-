@@ -1,212 +1,270 @@
 # app.py
 import streamlit as st
-import requests
 import random
-from typing import Optional, Tuple
+import requests
+import datetime
+import pandas as pd
+from typing import Optional
 
-# -------------------------
+# =========================
 # 기본 설정
-# -------------------------
+# =========================
 st.set_page_config(
-    page_title="AI 습관 트래커",
-    page_icon="📊",
+    page_title="AI 습관 트래커 (포켓몬)",
+    page_icon="🎮",
     layout="wide"
 )
 
-st.title("📊 AI 습관 트래커")
+st.title("🎮 AI 습관 트래커 (포켓몬 에디션)")
 
-# -------------------------
-# 사이드바 - API Key 입력
-# -------------------------
+# =========================
+# 사이드바 - API 키
+# =========================
 with st.sidebar:
     st.header("🔑 API 설정")
     openai_api_key = st.text_input("OpenAI API Key", type="password")
     weather_api_key = st.text_input("OpenWeatherMap API Key", type="password")
-    st.caption("⚠️ 키는 브라우저에만 사용되며 저장되지 않습니다.")
+    st.markdown("---")
+    st.caption("API 키는 로컬에서만 사용됩니다.")
 
-# -------------------------
+# =========================
 # 유틸 함수
-# -------------------------
+# =========================
 def get_weather(city: str, api_key: str) -> Optional[dict]:
+    if not api_key:
+        return None
     try:
         url = "https://api.openweathermap.org/data/2.5/weather"
         params = {
-            "q": f"{city},KR",  # 🔥 핵심 수정
+            "q": city,
             "appid": api_key,
             "units": "metric",
             "lang": "kr"
         }
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
+        res = requests.get(url, params=params, timeout=10)
+        res.raise_for_status()
+        data = res.json()
         return {
+            "city": city,
             "temp": data["main"]["temp"],
             "desc": data["weather"][0]["description"]
         }
-    except Exception as e:
-        st.warning(f"🌧️ 날씨 API 오류: {e}")
-        return None
-
-
-def get_dog_image() -> Optional[Tuple[str, str]]:
-    try:
-        r = requests.get("https://dog.ceo/api/breeds/image/random", timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        img_url = data["message"]
-        breed = img_url.split("/breeds/")[1].split("/")[0]
-        return img_url, breed
     except Exception:
         return None
 
 
-def generate_report(habits, mood, weather, dog_breed, style):
-    from openai import OpenAI
-    client = OpenAI(api_key=openai_api_key)
+def get_pokemon() -> Optional[dict]:
+    try:
+        poke_id = random.randint(1, 151)
+        url = f"https://pokeapi.co/api/v2/pokemon/{poke_id}"
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+
+        stats = {s["stat"]["name"]: s["base_stat"] for s in data["stats"]}
+
+        return {
+            "id": poke_id,
+            "name": data["name"].capitalize(),
+            "types": [t["type"]["name"] for t in data["types"]],
+            "image": data["sprites"]["other"]["official-artwork"]["front_default"],
+            "stats": {
+                "HP": stats.get("hp", 0),
+                "공격": stats.get("attack", 0),
+                "방어": stats.get("defense", 0),
+                "특수공격": stats.get("special-attack", 0),
+                "특수방어": stats.get("special-defense", 0),
+                "스피드": stats.get("speed", 0),
+            }
+        }
+    except Exception:
+        return None
+
+
+def generate_report(
+    habits: list,
+    mood: int,
+    weather: Optional[dict],
+    pokemon: Optional[dict],
+    coach_style: str,
+    api_key: str
+) -> str:
+    if not api_key:
+        return "❌ OpenAI API Key를 입력해주세요."
 
     system_prompts = {
-        "스파르타 코치": "너는 엄격하고 직설적인 습관 코치다. 변명은 허용하지 않는다.",
-        "따뜻한 멘토": "너는 공감과 응원을 잘하는 따뜻한 멘토다.",
-        "게임 마스터": "너는 RPG 게임의 마스터다. 퀘스트와 레벨 개념으로 말한다."
+        "스파르타 코치": "너는 매우 엄격하고 직설적인 코치다. 변명은 용납하지 않는다.",
+        "따뜻한 멘토": "너는 공감 능력이 뛰어난 따뜻한 멘토다. 부드럽게 동기부여한다.",
+        "게임 마스터": "너는 RPG 게임 마스터다. 퀘스트와 레벨업 개념으로 말한다."
     }
 
-    user_prompt = f"""
-오늘 체크한 습관: {", ".join(habits)}
-기분 점수: {mood}/10
-날씨: {weather}
-강아지 품종: {dog_breed}
+    weather_text = (
+        f"{weather['city']}의 날씨는 {weather['desc']}, {weather['temp']}도"
+        if weather else "날씨 정보 없음"
+    )
 
-아래 형식으로만 출력:
+    pokemon_text = (
+        f"{pokemon['name']} (타입: {', '.join(pokemon['types'])}, 스탯: {pokemon['stats']})"
+        if pokemon else "포켓몬 정보 없음"
+    )
+
+    user_prompt = f"""
+오늘의 습관 달성: {habits}
+기분 점수: {mood}/10
+날씨: {weather_text}
+파트너 포켓몬: {pokemon_text}
+
+아래 형식으로 리포트를 작성해줘:
 - 컨디션 등급 (S~D)
 - 습관 분석
 - 날씨 코멘트
 - 내일 미션
-- 오늘의 한마디
+- 오늘의 파트너 포켓몬 응원
 """
 
-    res = client.chat.completions.create(
-        model="gpt-5-mini",
-        messages=[
-            {"role": "system", "content": system_prompts[style]},
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": "gpt-5-mini",
+        "messages": [
+            {"role": "system", "content": system_prompts[coach_style]},
             {"role": "user", "content": user_prompt}
         ]
-    )
-    return res.choices[0].message.content
+    }
 
+    try:
+        res = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=10
+        )
+        res.raise_for_status()
+        return res.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"❌ 리포트 생성 실패: {e}"
 
-# -------------------------
-# Session State 초기화
-# -------------------------
-if "records" not in st.session_state:
-    st.session_state.records = [random.randint(2, 5) for _ in range(6)]
-
-# -------------------------
+# =========================
 # 습관 체크인 UI
-# -------------------------
-st.subheader("✅ 오늘의 체크인")
+# =========================
+st.subheader("✅ 오늘의 습관 체크인")
 
-habits = {
-    "🌅 기상 미션": False,
-    "💧 물 마시기": False,
-    "📚 공부/독서": False,
-    "🏃 운동하기": False,
-    "😴 수면": False
-}
+habits = [
+    ("⏰", "기상 미션"),
+    ("💧", "물 마시기"),
+    ("📚", "공부/독서"),
+    ("🏃", "운동하기"),
+    ("😴", "수면"),
+]
 
-col1, col2 = st.columns(2)
-for i, habit in enumerate(habits.keys()):
-    with col1 if i % 2 == 0 else col2:
-        habits[habit] = st.checkbox(habit)
+cols = st.columns(2)
+checked = []
 
-mood = st.slider("🙂 오늘 기분 점수", 1, 10, 5)
+for i, (emoji, name) in enumerate(habits):
+    with cols[i % 2]:
+        if st.checkbox(f"{emoji} {name}"):
+            checked.append(name)
+
+mood = st.slider("😊 오늘 기분 점수", 1, 10, 5)
 
 city = st.selectbox(
     "🌍 도시 선택",
     ["Seoul", "Busan", "Incheon", "Daegu", "Daejeon",
-     "Gwangju", "Suwon", "Ulsan", "Jeju", "Changwon"]
+     "Gwangju", "Suwon", "Ulsan", "Jeju", "Sejong"]
 )
 
-style = st.radio(
-    "🎭 코치 스타일",
-    ["스파르타 코치", "따뜻한 멘토", "게임 마스터"],
-    horizontal=True
+coach_style = st.radio(
+    "🎤 코치 스타일",
+    ["스파르타 코치", "따뜻한 멘토", "게임 마스터"]
 )
 
-# -------------------------
-# 달성률 계산
-# -------------------------
-checked = [k for k, v in habits.items() if v]
-achievement = int(len(checked) / 5 * 100)
+# =========================
+# 달성률 + 차트
+# =========================
+achievement_rate = int(len(checked) / len(habits) * 100)
 
-# -------------------------
-# 메트릭
-# -------------------------
+st.markdown("### 📊 오늘의 요약")
 m1, m2, m3 = st.columns(3)
-m1.metric("달성률", f"{achievement}%")
-m2.metric("완료 습관", f"{len(checked)} / 5")
+m1.metric("달성률", f"{achievement_rate}%")
+m2.metric("달성 습관 수", f"{len(checked)}/5")
 m3.metric("기분", f"{mood}/10")
 
-# -------------------------
-# 차트
-# -------------------------
-st.subheader("📈 7일 습관 달성 기록")
+sample_data = pd.DataFrame({
+    "날짜": [
+        (datetime.date.today() - datetime.timedelta(days=i)).strftime("%m/%d")
+        for i in range(6, 0, -1)
+    ],
+    "달성률": [40, 60, 80, 50, 70, 90]
+})
 
-today_count = len(checked)
-data = st.session_state.records + [today_count]
-st.bar_chart(data)
+today_row = pd.DataFrame({
+    "날짜": [datetime.date.today().strftime("%m/%d")],
+    "달성률": [achievement_rate]
+})
 
-# -------------------------
-# AI 리포트 생성
-# -------------------------
-st.subheader("🤖 AI 코치 리포트")
+chart_df = pd.concat([sample_data, today_row], ignore_index=True)
+st.bar_chart(chart_df.set_index("날짜"))
 
-if st.button("컨디션 리포트 생성"):
-    weather = get_weather(city, weather_api_key) if weather_api_key else None
-    dog = get_dog_image()
+# =========================
+# 결과 표시
+# =========================
+st.markdown("---")
+if st.button("🧠 컨디션 리포트 생성"):
+    weather = get_weather(city, weather_api_key)
+    pokemon = get_pokemon()
 
-    weather_text = (
-        f"{weather['temp']}°C, {weather['desc']}"
-        if weather else "날씨 정보 없음"
+    report = generate_report(
+        checked, mood, weather, pokemon, coach_style, openai_api_key
     )
-
-    dog_url, dog_breed = dog if dog else (None, "알 수 없음")
-
-    if openai_api_key:
-        report = generate_report(
-            checked, mood, weather_text, dog_breed, style
-        )
-    else:
-        report = "⚠️ OpenAI API Key를 입력하세요."
 
     c1, c2 = st.columns(2)
 
     with c1:
-        st.markdown("### 🌤️ 오늘의 날씨")
-        st.write(weather_text)
+        st.subheader("🌦 날씨 카드")
+        if weather:
+            st.write(f"**{weather['city']}**")
+            st.write(weather["desc"])
+            st.write(f"{weather['temp']} ℃")
+        else:
+            st.warning("날씨 정보를 불러오지 못했습니다.")
 
     with c2:
-        st.markdown("### 🐶 오늘의 강아지")
-        if dog_url:
-            st.image(dog_url, use_container_width=True)
-            st.caption(f"품종: {dog_breed}")
+        st.subheader("🧩 포켓몬 카드")
+        if pokemon:
+            st.image(pokemon["image"], use_column_width=True)
+            st.write(f"**No.{pokemon['id']} {pokemon['name']}**")
+            st.write("타입:", ", ".join(pokemon["types"]))
 
-    st.markdown("### 📋 AI 코치 리포트")
+            stats_df = pd.DataFrame.from_dict(
+                pokemon["stats"], orient="index", columns=["스탯"]
+            )
+            st.bar_chart(stats_df)
+        else:
+            st.warning("포켓몬 정보를 불러오지 못했습니다.")
+
+    st.subheader("📜 AI 코치 리포트")
     st.write(report)
 
     share_text = f"""
-📊 오늘의 AI 습관 리포트
-- 달성률: {achievement}%
-- 기분: {mood}/10
-- 완료 습관: {", ".join(checked)}
+🎮 AI 습관 트래커 리포트
+달성률: {achievement_rate}%
+기분: {mood}/10
+도시: {city}
+파트너 포켓몬: {pokemon['name'] if pokemon else '없음'}
 """
-    st.code(share_text, language="text")
+    st.subheader("📤 공유용 텍스트")
+    st.code(share_text)
 
-# -------------------------
-# 하단 안내
-# -------------------------
+# =========================
+# API 안내
+# =========================
 with st.expander("ℹ️ API 안내"):
     st.markdown("""
 - **OpenAI API**: AI 코치 리포트 생성
-- **OpenWeatherMap API**: 실시간 날씨 (섭씨, 한국어)
-- **Dog CEO API**: 랜덤 강아지 이미지
+- **OpenWeatherMap API**: 현재 날씨 정보
+- **PokeAPI**: 1세대 랜덤 포켓몬 정보  
+모든 API 키는 외부로 저장되지 않습니다.
 """)
