@@ -1,7 +1,6 @@
 # app.py
 import streamlit as st
 import requests
-import datetime
 import random
 from typing import Optional, Tuple
 
@@ -32,7 +31,7 @@ def get_weather(city: str, api_key: str) -> Optional[dict]:
     try:
         url = "https://api.openweathermap.org/data/2.5/weather"
         params = {
-            "q": city,
+            "q": f"{city},KR",  # 🔥 핵심 수정
             "appid": api_key,
             "units": "metric",
             "lang": "kr"
@@ -44,7 +43,8 @@ def get_weather(city: str, api_key: str) -> Optional[dict]:
             "temp": data["main"]["temp"],
             "desc": data["weather"][0]["description"]
         }
-    except Exception:
+    except Exception as e:
+        st.warning(f"🌧️ 날씨 API 오류: {e}")
         return None
 
 
@@ -98,8 +98,7 @@ def generate_report(habits, mood, weather, dog_breed, style):
 # Session State 초기화
 # -------------------------
 if "records" not in st.session_state:
-    demo = [random.randint(2, 5) for _ in range(6)]
-    st.session_state.records = demo
+    st.session_state.records = [random.randint(2, 5) for _ in range(6)]
 
 # -------------------------
 # 습관 체크인 UI
@@ -157,7 +156,7 @@ data = st.session_state.records + [today_count]
 st.bar_chart(data)
 
 # -------------------------
-# 결과 생성
+# AI 리포트 생성
 # -------------------------
 st.subheader("🤖 AI 코치 리포트")
 
@@ -195,9 +194,10 @@ if st.button("컨디션 리포트 생성"):
     st.write(report)
 
     share_text = f"""
-오늘의 달성률: {achievement}%
-기분: {mood}/10
-완료 습관: {", ".join(checked)}
+📊 오늘의 AI 습관 리포트
+- 달성률: {achievement}%
+- 기분: {mood}/10
+- 완료 습관: {", ".join(checked)}
 """
     st.code(share_text, language="text")
 
@@ -206,7 +206,7 @@ if st.button("컨디션 리포트 생성"):
 # -------------------------
 with st.expander("ℹ️ API 안내"):
     st.markdown("""
-- **OpenAI**: AI 코치 리포트 생성
-- **OpenWeatherMap**: 실시간 날씨 정보
+- **OpenAI API**: AI 코치 리포트 생성
+- **OpenWeatherMap API**: 실시간 날씨 (섭씨, 한국어)
 - **Dog CEO API**: 랜덤 강아지 이미지
 """)
